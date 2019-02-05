@@ -677,6 +677,17 @@ window.toggleLayer = function(layerType, table) {
     eventAction: 'load',
     eventLabel: 'Tile Layer'
     });
+
+    var vtStyles = GeoPackageAPI.getStylesForVectorTable(geoPackage, table);
+    var styleGroups = vtStyles.map(vtStyle => ({title: vtStyle.title, layers: vtStyle.getStyleLayersForSourceLayer(table)}));
+    
+    for (var styleGroup of styleGroups) {
+      console.log("Style with title \"" + styleGroup.title + "\" for table \"" + table + "\" has " + styleGroup.layers.length + " applicable layers:");
+      for (var layer of styleGroup.layers) {
+        console.log(layer);
+      }
+    }
+
     var tileDao = geoPackage.getTileDao(table);
     // these are not the correct zooms for the map.  Need to convert the GP zooms to leaflet zooms
     var maxZoom = tileDao.maxWebMapZoom;
@@ -699,7 +710,8 @@ window.toggleLayer = function(layerType, table) {
           .then(function(vectorTile) {
                 // Normalize feature getters into actual instanced features
                 for (var layerName in vectorTile.layers) {
-                    vectorGridLayer.options.vectorTileLayerStyles[layerName] = featureStyle;
+                    var selectedVtStyle = vtStyles.length>0 ? vtStyles[0] : null;
+                    vectorGridLayer.options.vectorTileLayerStyles[layerName] = featureStyleBuilder(selectedVtStyle, layerName);
                     var feats = [];
 
                     for (var i=0; i< vectorTile.layers[layerName].length; i++) {
@@ -719,6 +731,32 @@ window.toggleLayer = function(layerType, table) {
     map.addLayer(vectorGridLayer);
     vectorGridLayer.bringToFront();
     tableLayers[table] = vectorGridLayer;
+  }
+}
+
+function featureStyleBuilder(vtStyle, layerName, layerProperties) {
+  var leafletStyle = {};
+  if (!!vtStyle) {
+    var styleLayers = vtStyle.getStyleLayersForSourceLayer(layerName, layerProperties);
+    for (var styleLayer of styleLayers) {
+      leafletStyle = {
+        ...leafletStyle,
+        ...(styleLayer.style),
+      };
+    }  
+  }
+
+  return function(featureProps, z, featureType) {
+    console.log("Styling layer " + layerName + " using style " + vtStyle.title);
+    var combinedStyle = {
+      weight: featureProps['stroke-width'] ? Number(featureProps['stroke-width']) : leafletStyle.weight,
+      color: featureProps['stroke'] || leafletStyle.color,
+      opacity: featureProps['stroke-opacity'] ? Number(featureProps['stroke-opacity']) : leafletStyle.opacity,
+      fillColor: featureProps['fill'] || leafletStyle.fillColor,
+      fillOpacity: featureProps['fill-opacity'] ? Number(featureProps['fill-opacity']) : leafletStyle.fillOpacity,
+    };
+    console.log(combinedStyle);
+    return combinedStyle;
   }
 }
 
@@ -797,16 +835,6 @@ function pointStyle(feature) {
     opacity: feature.properties['stroke-opacity'] ? Number(feature.properties['stroke-opacity']) : 1,
     size: size,
     radius: radius
-  };
-}
-
-function featureStyle(feature) {
-  return {
-    weight: feature.properties['stroke-width'] ? Number(feature.properties['stroke-width']) : 2,
-    opacity: feature.properties['stroke-opacity'] ? Number(feature.properties['stroke-opacity']) : 1,
-    fillColor: feature.properties['fill'] || "#00F",
-    fillOpacity: feature.properties['fill-opacity'] ? Number(feature.properties['fill-opacity']) : .2,
-    color: feature.properties['stroke'] || '#00F'
   };
 }
 
